@@ -8,9 +8,11 @@
 class ThreadPool {
 public:
     explicit ThreadPool(size_t);
+    ~ThreadPool();
+    void stopThreadPool(bool finishTasks = false);
     template<class F, class... Args>
     decltype(auto) enqueue(F&& f, Args&&... args);
-    ~ThreadPool();
+
 private:
     // need to keep track of threads so we can join them
     std::vector< std::thread > workers;
@@ -73,6 +75,31 @@ decltype(auto) ThreadPool::enqueue(F&& f, Args&&... args)
     }
     condition.notify_one();
     return res;
+}
+
+void ThreadPool::stopThreadPool(bool finishTasks) {
+
+    if (!stop) {
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            stop = true;
+
+            if (!finishTasks) {
+                std::queue< std::packaged_task<void()> > empty;
+                std::swap(tasks, empty);
+            }
+        }
+        condition.notify_all();
+    }
+
+    for (auto& x : workers) {
+        if (x.joinable())
+            x.join();
+    }
+}
+
+ThreadPool::~ThreadPool() {
+    stopThreadPool(true);
 }
 
 #endif
