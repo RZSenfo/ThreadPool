@@ -29,9 +29,10 @@ private:
     
 public:
     // the constructor just launches some amount of workers
-    explicit ThreadPool(size_t) : stop(false)
+    explicit ThreadPool(size_t workers) : stop(false)
     {
-        for(size_t i = 0;i<threads;++i) {
+        for(size_t i = 0;i < workers; ++i)
+        {
             this->queues.emplace_back(
                 WorkerQueue()
             );
@@ -45,9 +46,12 @@ public:
                         {
                             std::unique_lock<std::mutex> lock(this->queues[i].queue_mutex);
                             this->queues[i].condition.wait(lock,
-                                [this]{ return this->stop || !this->queues[i].tasks.empty(); });
+                                [this,i]{ return this->stop || !this->queues[i].tasks.empty(); }
+                            );
                             if(this->stop && this->queues[i].tasks.empty())
+                            {
                                 return;
+                            }
                             task = std::move(this->queues[i].tasks.front());
                             this->queues[i].tasks.pop();
                         }
@@ -68,12 +72,15 @@ public:
     // stop the pool
     void stopThreadPool(bool finishTasks = false)
     {
-        if (!this->stop) {
+        if (!this->stop)
+        {
             this->stop = true;
-            for (size_t i = 0; i < this->queues.size(); i++) {
+            for(size_t i = 0; i < this->queues.size(); ++i)
+            {
                 {
                     std::unique_lock<std::mutex> lock(this->queues[i].queue_mutex);
-                    if (!finishTasks) {
+                    if(!finishTasks)
+                    {
                         std::queue< std::packaged_task<void()> > empty;
                         std::swap(this->queues[i].tasks, empty);
                     }
@@ -82,9 +89,12 @@ public:
             }
         }
 
-        for (auto& x : workers) {
-            if (x.joinable())
+        for(auto& x : workers)
+        {
+            if(x.joinable())
+            {
                 x.join();
+            }
         }
     }
     
@@ -98,15 +108,24 @@ public:
             std::bind(std::forward<F>(f), std::forward<Args>(args)...)
         );
         
-        size_t chosen_worker = (++this->round_robin_idx >= this->workers.size()) ? (this->round_robin_idx = 0) : this->round_robin_idx)
+        // even if the whole thing is not atomic, the worst thing to happen,
+        // is that the first worker gets some more work to do
+        size_t chosen_worker = ++(this->round_robin_idx);
+        if (chosen_worker >= this->workers.size())
+        {
+            this->round_robin_idx = 0;
+            chosen_worker = 0;
+        }
 
         std::future<return_type> res = task.get_future();
         {
             std::unique_lock<std::mutex> lock(this->queues[chosen_worker].queue_mutex);
 
             // don't allow enqueueing after stopping the pool
-            if(stop)
+            if (stop)
+            {
                 throw std::runtime_error("enqueue on stopped ThreadPool");
+            }
 
             this->queues[chosen_worker].tasks.emplace(std::move(task));
         }
