@@ -18,6 +18,7 @@ private:
     };
     
     // need to keep track of threads so we can join them
+    size_t pool_size;
     std::vector< std::thread > workers;
     
     // queues
@@ -29,7 +30,7 @@ private:
     
 public:
     // the constructor just launches some amount of workers
-    explicit ThreadPool(size_t workers) : stop(false)
+    explicit ThreadPool(size_t workers) : stop(false), pool_size(workers)
     {
         for(size_t i = 0;i < workers; ++i)
         {
@@ -131,6 +132,10 @@ public:
         }
         this->queues[chosen_worker].condition.notify_one();
         return res;
+    }
+
+    size_t getPoolSize() {
+        return this->pool_size;
     }
 };
 #endif
