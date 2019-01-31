@@ -84,8 +84,7 @@ public:
                     std::unique_lock<std::mutex> lock(this->queues[i]->queue_mutex);
                     if(!finishTasks)
                     {
-                        std::queue< std::function<void()> > empty;
-                        std::swap(this->queues[i]->tasks, empty);
+                        std::swap(this->queues[i]->tasks, std::queue< std::function<void()> >());
                     }
                 }
                 this->queues[i]->condition.notify_all();
@@ -122,19 +121,17 @@ public:
 
         using return_type = typename std::result_of<F(Args...)>::type;
 
-        std::function<return_type()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-
-        std::promise<return_type> * prom = new std::promise<return_type>();
+        std::shared_ptr<std::promise<return_type>> prom = std::make_shared<std::promise<return_type>>();
         std::future<return_type> res = prom->get_future();
+        
+        std::function<return_type()> fnc = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
         {
             std::unique_lock<std::mutex> lock(this->queues[chosen_worker]->queue_mutex);
 
             this->queues[chosen_worker]->tasks.emplace(
-                std::bind(
-                    __tp_invoke<return_type>,
-                    prom,
-                    std::move(task)
-                )
+                [prom = std::move(prom), fnc = std::move(fnc)]() mutable {
+                    __tp_invoke<return_type>(prom, fnc);;
+                }
             );
         }
         this->queues[chosen_worker]->condition.notify_one();
@@ -147,16 +144,14 @@ public:
 };
 
 template <typename T>
-typename std::enable_if<!std::is_same<T, void>::value>::type __tp_invoke(std::promise<T>* prom, std::function<T()>& task)
+typename std::enable_if<!std::is_same<T, void>::value>::type __tp_invoke(std::shared_ptr<std::promise<T>>& prom, std::function<T()>& task)
 {
     prom->set_value(task());
-    delete prom;
 }
 template <typename T>
-typename std::enable_if<std::is_same<T, void>::value>::type __tp_invoke(std::promise<T>* prom, std::function<T()>& task)
+typename std::enable_if<std::is_same<T, void>::value>::type __tp_invoke(std::shared_ptr<std::promise<T>>& prom, std::function<T()>& task)
 {
     task();
     prom->set_value();
-    delete prom;
 }
 #endif
