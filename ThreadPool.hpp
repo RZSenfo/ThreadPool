@@ -146,6 +146,43 @@ public:
         return res;
     }
 
+    // add new work item to the pool
+    template<class F, class... Args>
+    void fireAndForget(F&& f, Args&&... args)
+    {
+        // don't allow enqueueing after stopping the pool
+        if (stop)
+        {
+            throw std::runtime_error("enqueue on stopped ThreadPool");
+        }
+
+        // even if the whole thing is not atomic, the worst thing to happen,
+        // is that the first worker gets some more work to do
+        size_t chosen_worker = ++(this->round_robin_idx);
+        if (chosen_worker >= this->workers.size())
+        {
+            this->round_robin_idx = 0;
+            chosen_worker = 0;
+        }
+
+        using return_type = typename std::result_of<F(Args...)>::type;
+
+        std::function<return_type()> fnc = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        {
+            std::unique_lock<std::mutex> lock(this->queues[chosen_worker]->queue_mutex);
+
+            this->queues[chosen_worker]->tasks.emplace(
+                [fnc = std::move(fnc)]() mutable {
+                try {
+                    fnc();
+                }
+                catch (...) {}
+            }
+            );
+        }
+        this->queues[chosen_worker]->condition.notify_one();
+    }
+
     size_t getPoolSize() {
         return this->pool_size;
     }
