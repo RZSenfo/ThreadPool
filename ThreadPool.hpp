@@ -130,15 +130,15 @@ public:
 
             this->queues[chosen_worker]->tasks.emplace(
                 [prom = std::move(prom), fnc = std::move(fnc)]() mutable {
-					try {
-						__tp_invoke<return_type>(prom, fnc);
-					}
-					catch (...) {
-						try {
-							prom->set_exception(std::current_exception());
-						}
-						catch (...) {} // set_exception() may throw too
-					}
+                    try {
+                        __tp_invoke<return_type>(prom, fnc);
+                    }
+                    catch (...) {
+                        try {
+                            prom->set_exception(std::current_exception());
+                        }
+                        catch (...) {} // set_exception() may throw too
+                    }
                 }
             );
         }
