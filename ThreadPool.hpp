@@ -29,6 +29,12 @@ private:
     std::atomic<size_t> round_robin_idx = 0;
     
 public:
+
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool(ThreadPool&&) = delete;
+    ThreadPool& operator=(ThreadPool&&) = delete;
+
     // the constructor just launches some amount of workers
     explicit ThreadPool(size_t workers) : stop(false), pool_size(workers)
     {
